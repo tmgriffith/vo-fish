@@ -152,6 +152,10 @@ _PRESET_KNOWN = set(_PRESET_DEFAULTS) | {"name"}
 def load_presets(path: Path = DEFAULT_PRESETS_PATH) -> dict[str, Preset]:
     raw = _read_json(path)
     presets_raw = raw.get("presets", {})
+    if not isinstance(presets_raw, dict):
+        raise RegistryError(
+            f"invalid presets.json at {path}: 'presets' must be an object"
+        )
     out: dict[str, Preset] = {}
     for name, data in presets_raw.items():
         merged = {**_PRESET_DEFAULTS, **{k: v for k, v in data.items() if k in _PRESET_DEFAULTS}}

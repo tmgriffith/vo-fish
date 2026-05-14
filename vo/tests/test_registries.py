@@ -180,3 +180,17 @@ def test_add_preset_writes_and_preserves(sample_presets_path):
     presets = load_presets(sample_presets_path)
     assert set(presets.keys()) == {"fb-reel-hype", "new"}
     assert presets["new"].tag_density == "low"
+
+
+def test_load_presets_top_level_array_raises(tmp_path):
+    p = tmp_path / "presets.json"
+    p.write_text("[]")
+    with pytest.raises(RegistryError, match="expected an object"):
+        load_presets(p)
+
+
+def test_load_presets_presets_field_not_object_raises(tmp_path):
+    p = tmp_path / "presets.json"
+    p.write_text('{"version": 1, "presets": "not a dict"}')
+    with pytest.raises(RegistryError, match="'presets' must be an object"):
+        load_presets(p)
