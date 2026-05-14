@@ -6,3 +6,8 @@ __pycache__/
 *.tagged.txt
 *.words.json
 /tmp/
+
+# Local-only voice-registry overlay with real transcripts.
+# `voices.json` ships with placeholder transcripts; the local overlay
+# supplies the actual spoken sentences and stays off the public repo.
+vo/voices.local.json

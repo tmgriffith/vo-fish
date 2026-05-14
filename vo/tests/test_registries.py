@@ -115,6 +115,52 @@ def test_add_voice_writes_extra_fields(tmp_voices_path):
     assert raw["voices"]["v"]["created_at"] == "2026-05-14"
 
 
+# ---------- voices.local.json overlay ----------------------------------
+
+def test_overlay_fills_in_missing_transcript(tmp_path):
+    base = tmp_path / "voices.json"
+    base.write_text(json.dumps({"version": 1, "voices": {
+        "excited": {"label": "Excited", "audio": "a.m4a",
+                    "transcript": "<placeholder>"}
+    }}))
+    overlay = tmp_path / "voices.local.json"
+    overlay.write_text(json.dumps({"voices": {
+        "excited": {"transcript": "real spoken sentence"}
+    }}))
+    voices = load_voices(base)
+    assert voices["excited"].transcript == "real spoken sentence"
+    # Non-overridden fields stay from base.
+    assert voices["excited"].label == "Excited"
+    assert voices["excited"].audio == "a.m4a"
+
+
+def test_overlay_can_add_new_voices(tmp_path):
+    base = tmp_path / "voices.json"
+    base.write_text(json.dumps({"version": 1, "voices": {}}))
+    overlay = tmp_path / "voices.local.json"
+    overlay.write_text(json.dumps({"voices": {
+        "private": {"label": "P", "audio": "p.m4a", "transcript": "x"}
+    }}))
+    voices = load_voices(base)
+    assert "private" in voices
+    assert voices["private"].label == "P"
+
+
+def test_overlay_absent_is_no_op(sample_voices_path):
+    # No overlay file exists; load_voices behaves exactly like before.
+    voices = load_voices(sample_voices_path)
+    assert voices["excited"].transcript == "Test transcript."
+
+
+def test_overlay_malformed_voices_field_raises(tmp_path):
+    base = tmp_path / "voices.json"
+    base.write_text(json.dumps({"version": 1, "voices": {}}))
+    overlay = tmp_path / "voices.local.json"
+    overlay.write_text(json.dumps({"voices": "not a dict"}))
+    with pytest.raises(RegistryError, match="overlay.*must be an object"):
+        load_voices(base)
+
+
 # ---------- presets.json -----------------------------------------------
 
 @pytest.fixture

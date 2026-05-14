@@ -15,7 +15,22 @@ Outputs `out/vo.wav`, `out/vo.words.json`, `out/vo.tagged.txt`.
 
 ## Voices
 
-`vo/voices.json` is the registry. Add a new voice on the fly:
+`vo/voices.json` is the public registry. The shipped file uses placeholder
+transcripts so no contributor's spoken sentences end up in version control.
+Drop a `vo/voices.local.json` (gitignored) next to it to supply real
+transcripts on your own machine:
+
+    {
+      "voices": {
+        "excited": { "transcript": "your real recorded sentence..." }
+      }
+    }
+
+The local overlay is field-merged on top of the base registry at load time —
+you only override the fields you actually want to replace (typically just
+`transcript`).
+
+Add a new voice on the fly:
 
     .venv-mlx/bin/python vo/render.py \
         --ref-audio path/to/sample.m4a \

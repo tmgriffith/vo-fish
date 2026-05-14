@@ -77,6 +77,18 @@ def _write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
+def _overlay_path(base: Path) -> Path:
+    """Return the local-overlay path that sits next to `base`.
+
+    e.g. `vo/voices.json` -> `vo/voices.local.json`. The overlay is optional;
+    when present, its voice entries are field-merged on top of the base entries
+    before validation. This lets the committed `voices.json` ship with
+    placeholder transcripts while a local (gitignored) `voices.local.json`
+    supplies the real ones.
+    """
+    return base.with_name(base.stem + ".local" + base.suffix)
+
+
 def load_voices(path: Path = DEFAULT_VOICES_PATH) -> dict[str, Voice]:
     raw = _read_json(path)
     voices_raw = raw.get("voices", {})
@@ -84,6 +96,22 @@ def load_voices(path: Path = DEFAULT_VOICES_PATH) -> dict[str, Voice]:
         raise RegistryError(
             f"invalid voices.json at {path}: 'voices' must be an object"
         )
+
+    # Field-level merge of an optional sibling `*.local.json` overlay.
+    overlay_path = _overlay_path(path)
+    if overlay_path.exists():
+        overlay = _read_json(overlay_path)
+        overlay_voices = overlay.get("voices", {})
+        if not isinstance(overlay_voices, dict):
+            raise RegistryError(
+                f"invalid voices overlay at {overlay_path}: 'voices' must be an object"
+            )
+        for vid, fields in overlay_voices.items():
+            if not isinstance(fields, dict):
+                continue
+            base_entry = voices_raw.get(vid, {})
+            merged = {**base_entry, **fields}  # overlay fields win
+            voices_raw[vid] = merged
     out: dict[str, Voice] = {}
     for vid, data in voices_raw.items():
         missing = [f for f in _REQUIRED_VOICE_FIELDS if f not in data]
