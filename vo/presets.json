@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "presets": {
+    "fb-reel-hype": {
+      "voice": "excited",
+      "tag_hints": ["[emphasis]", "[excited]", "[short pause]"],
+      "tag_density": "high",
+      "temperature": 0.75,
+      "top_p": 0.7,
+      "top_k": 30,
+      "speed": 1.05,
+      "language": "en",
+      "notes": "Fast-paced FB/IG reel narration with punchy emphasis."
+    },
+    "tutorial-explainer": {
+      "voice": "resolute",
+      "tag_hints": ["[pause]", "[emphasis]"],
+      "tag_density": "low",
+      "temperature": 0.6,
+      "top_p": 0.7,
+      "top_k": 30,
+      "speed": 0.95,
+      "language": "en",
+      "notes": "Calm, measured authority. Light tagging."
+    },
+    "direct-pitch": {
+      "voice": "aggressive",
+      "tag_hints": ["[emphasis]", "[short pause]", "[loud]"],
+      "tag_density": "medium",
+      "temperature": 0.7,
+      "top_p": 0.7,
+      "top_k": 30,
+      "speed": 1.0,
+      "language": "en",
+      "notes": "Confident sales delivery with deliberate emphasis."
+    },
+    "story-emotional": {
+      "voice": "resolute",
+      "tag_hints": ["[sigh]", "[pause]", "[low voice]", "[whisper]"],
+      "tag_density": "medium",
+      "temperature": 0.7,
+      "top_p": 0.7,
+      "top_k": 30,
+      "speed": 0.95,
+      "language": "en",
+      "notes": "Slow, emotional storytelling."
+    },
+    "ad-aggressive-cta": {
+      "voice": "aggressive",
+      "tag_hints": ["[shouting]", "[emphasis]", "[surprised]"],
+      "tag_density": "high",
+      "temperature": 0.8,
+      "top_p": 0.7,
+      "top_k": 30,
+      "speed": 1.05,
+      "language": "en",
+      "notes": "High-energy ad with strong CTA push."
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "default": "excited",
+  "voices": {
+    "excited": {
+      "label": "Excited (energetic upbeat)",
+      "audio": "voice samples/Excited VO clone sample.m4a",
+      "transcript": "<paste a transcript of your own Excited VO reference here>",
+      "notes": "Best for hype/announce/hook content.",
+      "created_at": "2026-05-14",
+      "created_by": "manual"
+    },
+    "aggressive": {
+      "label": "Aggressive (punchy pitch)",
+      "audio": "voice samples/Aggressive VO clone sample.m4a",
+      "transcript": "<paste a transcript of your own Aggressive VO reference here>",
+      "notes": "Best for direct sales/CTA-driven scripts.",
+      "created_at": "2026-05-14",
+      "created_by": "manual"
+    },
+    "resolute": {
+      "label": "Resolute (calm authority)",
+      "audio": "voice samples/Resolute (slow) VO clone sample.m4a",
+      "transcript": "<paste a transcript of your own Resolute VO reference here>",
+      "notes": "Best for tutorial/explainer/story content.",
+      "created_at": "2026-05-14",
+      "created_by": "manual"
+    }
+  }
+}
