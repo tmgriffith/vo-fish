@@ -97,3 +97,31 @@ class FakeFishModel:
         n = int(self.sample_rate * self.audio_seconds)
         audio = mx.zeros((n,))
         return iter([_FakeGenResult(audio)])
+
+
+# --- shared audio-io patch ------------------------------------------------
+
+@pytest.fixture
+def patch_render_audio_io(monkeypatch):
+    """Patch vo.render._load_ref_audio and _write_audio so tests don't touch
+    real audio files or mlx_audio.audio_io. Returns the (load, write) callables
+    in case a test wants to override further."""
+    import mlx.core as mx
+    import vo.render as _render
+
+    def _fake_load(path, sr):
+        return mx.zeros((sr,))
+
+    def _fake_write(path, audio, sample_rate):
+        import wave, struct
+        path.parent.mkdir(parents=True, exist_ok=True)
+        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+
+    monkeypatch.setattr(_render, "_load_ref_audio", _fake_load)
+    monkeypatch.setattr(_render, "_write_audio", _fake_write)
+    return _fake_load, _fake_write

@@ -9,25 +9,12 @@ from vo.tests.conftest import FakeFishModel, FakeWhisper
 
 
 @pytest.fixture
-def fake_renderer(monkeypatch):
+def fake_renderer(monkeypatch, patch_render_audio_io):
     import vo.render as render
     tts = FakeFishModel()
     stt = FakeWhisper(transcript="hello world", words=tts.words)
     monkeypatch.setattr(render, "_get_model", lambda: tts)
     monkeypatch.setattr(render, "_get_stt", lambda: stt)
-    # Stub out the real audio loader so we don't need a real file on disk
-    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
-    # Stub out the audio writer so we don't need mlx_audio.audio_io
-    def _fake_write(path, audio, sample_rate):
-        import wave, struct
-        path.parent.mkdir(parents=True, exist_ok=True)
-        n_samples = audio.shape[0] if hasattr(audio, "shape") else len(audio)
-        with wave.open(str(path), "w") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
-            wf.writeframes(struct.pack(f"<{n_samples}h", *([0] * n_samples)))
-    monkeypatch.setattr(render, "_write_audio", _fake_write)
     return render, tts, stt
 
 
@@ -80,7 +67,7 @@ def test_render_model_default_voice(fake_renderer, tmp_path):
     assert call["ref_text"] is None
 
 
-def test_render_retries_on_silence_gap(monkeypatch, tmp_path, sample_voices_path):
+def test_render_retries_on_silence_gap(monkeypatch, tmp_path, sample_voices_path, patch_render_audio_io):
     import vo.render as render
     bad_words = [
         {"start": 0.0, "end": 1.0, "word": "hello"},
@@ -103,16 +90,6 @@ def test_render_retries_on_silence_gap(monkeypatch, tmp_path, sample_voices_path
     stt.generate = stt_generate
     monkeypatch.setattr(render, "_get_model", lambda: tts)
     monkeypatch.setattr(render, "_get_stt", lambda: stt)
-    import mlx.core as mx
-    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
-    def _fake_write(path, audio, sample_rate):
-        import wave, struct
-        path.parent.mkdir(parents=True, exist_ok=True)
-        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
-        with wave.open(str(path), "w") as wf:
-            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
-            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
-    monkeypatch.setattr(render, "_write_audio", _fake_write)
 
     out = tmp_path / "out.wav"
     result = render.render(
@@ -125,7 +102,7 @@ def test_render_retries_on_silence_gap(monkeypatch, tmp_path, sample_voices_path
     assert len(tts.calls) == 2
 
 
-def test_render_exhausts_retries_and_marks_failed(monkeypatch, tmp_path, sample_voices_path):
+def test_render_exhausts_retries_and_marks_failed(monkeypatch, tmp_path, sample_voices_path, patch_render_audio_io):
     import vo.render as render
     bad_words = [
         {"start": 0.0, "end": 1.0, "word": "a"},
@@ -135,16 +112,6 @@ def test_render_exhausts_retries_and_marks_failed(monkeypatch, tmp_path, sample_
     stt = FakeWhisper(words=bad_words)
     monkeypatch.setattr(render, "_get_model", lambda: tts)
     monkeypatch.setattr(render, "_get_stt", lambda: stt)
-    import mlx.core as mx
-    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
-    def _fake_write(path, audio, sample_rate):
-        import wave, struct
-        path.parent.mkdir(parents=True, exist_ok=True)
-        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
-        with wave.open(str(path), "w") as wf:
-            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
-            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
-    monkeypatch.setattr(render, "_write_audio", _fake_write)
     out = tmp_path / "out.wav"
     result = render.render(
         script="hi", out_path=out, voice="excited",
@@ -155,7 +122,7 @@ def test_render_exhausts_retries_and_marks_failed(monkeypatch, tmp_path, sample_
     assert result.quality_passed is False
 
 
-def test_render_no_stt_skips_quality_gate(monkeypatch, tmp_path, sample_voices_path):
+def test_render_no_stt_skips_quality_gate(monkeypatch, tmp_path, sample_voices_path, patch_render_audio_io):
     import vo.render as render
     tts = FakeFishModel()
     stt_called = {"n": 0}
@@ -164,16 +131,6 @@ def test_render_no_stt_skips_quality_gate(monkeypatch, tmp_path, sample_voices_p
         raise RuntimeError("should not be called")
     monkeypatch.setattr(render, "_get_model", lambda: tts)
     monkeypatch.setattr(render, "_get_stt", boom)
-    import mlx.core as mx
-    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
-    def _fake_write(path, audio, sample_rate):
-        import wave, struct
-        path.parent.mkdir(parents=True, exist_ok=True)
-        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
-        with wave.open(str(path), "w") as wf:
-            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
-            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
-    monkeypatch.setattr(render, "_write_audio", _fake_write)
     out = tmp_path / "out.wav"
     result = render.render(script="hi", out_path=out, voice="excited",
                            voices_path=sample_voices_path, no_stt=True)
