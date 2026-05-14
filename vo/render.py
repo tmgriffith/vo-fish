@@ -82,7 +82,7 @@ def render(
     language: str = "en",
     tag_mode: str = "auto",
     anchors: list[list[str]] | None = None,
-    max_retries: int = 1,
+    max_retries: int = 4,
     max_silence_gap: float = 2.5,
 ) -> RenderResult:
     out_path = Path(out_path)
@@ -101,57 +101,72 @@ def render(
 
     ref_arr = _load_ref_audio(rv.audio_path, sr) if rv.audio_path else None
 
-    # 3. Generate
-    results = list(model.generate(
-        text=final_script,
-        ref_audio=ref_arr,
-        ref_text=rv.transcript,
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
-        max_tokens=max_tokens,
-        chunk_length=chunk_length,
-        speed=speed,
-    ))
-    if not results:
-        raise RuntimeError("Fish Speech returned no audio segments")
-
+    # 3. Generation with quality-gate retry loop
     import mlx.core as mx
-    # Concatenate any segments
-    if len(results) == 1:
-        audio = results[0].audio
-    else:
-        audio = mx.concatenate([r.audio for r in results])
 
-    # Materialise before numpy conversion in _write_audio.
-    mx.eval(audio)
+    attempts_used = 0
+    final_audio = None
+    final_words = None
+    final_check: QualityCheck | None = None
 
-    _write_audio(out_path, audio, sr)
-    duration_s = float(audio.shape[0]) / sr
+    for attempt in range(1, max(1, max_retries) + 1):
+        attempts_used = attempt
+        # Perturb temperature on retry to break out of stuck states
+        attempt_temp = temperature + 0.05 * (attempt - 1)
+        results = list(model.generate(
+            text=final_script,
+            ref_audio=ref_arr,
+            ref_text=rv.transcript,
+            temperature=attempt_temp,
+            top_p=top_p,
+            top_k=top_k,
+            max_tokens=max_tokens,
+            chunk_length=chunk_length,
+            speed=speed,
+        ))
+        if not results:
+            continue
+        audio = results[0].audio if len(results) == 1 else mx.concatenate([r.audio for r in results])
+        mx.eval(audio)
+        _write_audio(out_path, audio, sr)
+        final_audio = audio
 
-    # 4. Sidecars (sttless path is short-circuited later in this plan)
-    tagged_path = out_path.with_suffix(".tagged.txt")
-    tagged_path.write_text(final_script)
+        if no_stt:
+            final_check = QualityCheck(passed=True, max_gap=0.0,
+                                       anchor_starts=None, reason="")
+            break
 
-    words_path: Path | None = None
-    quality_passed = True
-    if not no_stt:
         stt = _get_stt()
         r = stt.generate(str(out_path), word_timestamps=True,
                          return_timestamps=True, condition_on_previous_text=False)
         words = extract_words(r)
-        check: QualityCheck = evaluate(words, max_silence_gap=max_silence_gap,
-                                       anchors=anchors)
-        quality_passed = check.passed
+        check = evaluate(words, max_silence_gap=max_silence_gap, anchors=anchors)
+        final_words = words
+        final_check = check
+        if check.passed:
+            break
+
+    if final_audio is None:
+        raise RuntimeError("Fish Speech returned no audio segments across all retries")
+    assert final_check is not None
+
+    duration_s = float(final_audio.shape[0]) / sr
+
+    # 4. Sidecars
+    tagged_path = out_path.with_suffix(".tagged.txt")
+    tagged_path.write_text(final_script)
+
+    words_path: Path | None = None
+    if not no_stt:
         words_path = out_path.with_suffix(".words.json")
         words_path.write_text(json.dumps({
             "duration_s": duration_s,
-            "max_gap": check.max_gap,
-            "quality_passed": check.passed,
-            "quality_reason": check.reason,
-            "anchor_starts": check.anchor_starts,
+            "max_gap": final_check.max_gap,
+            "quality_passed": final_check.passed,
+            "quality_reason": final_check.reason,
+            "anchor_starts": final_check.anchor_starts,
             "words": [{"start": w.start, "end": w.end, "text": w.text}
-                      for w in words],
+                      for w in (final_words or [])],
         }, indent=2))
 
     return RenderResult(
@@ -160,6 +175,6 @@ def render(
         tagged_path=tagged_path,
         voice_id=rv.voice_id,
         duration_s=duration_s,
-        attempts_used=1,
-        quality_passed=quality_passed,
+        attempts_used=attempts_used,
+        quality_passed=final_check.passed,
     )

@@ -78,3 +78,105 @@ def test_render_model_default_voice(fake_renderer, tmp_path):
     call = tts.calls[0]
     assert call["ref_audio"] is None
     assert call["ref_text"] is None
+
+
+def test_render_retries_on_silence_gap(monkeypatch, tmp_path, sample_voices_path):
+    import vo.render as render
+    bad_words = [
+        {"start": 0.0, "end": 1.0, "word": "hello"},
+        {"start": 6.0, "end": 7.0, "word": "world"},  # 5s gap
+    ]
+    good_words = [
+        {"start": 0.0, "end": 0.5, "word": "hello"},
+        {"start": 0.6, "end": 1.0, "word": "world"},
+    ]
+    tts = FakeFishModel()
+    # Whisper returns bad words on first call, good on second
+    stt = FakeWhisper(words=bad_words)
+    call_count = {"n": 0}
+    _orig_gen = stt.generate
+    def stt_generate(audio, **kw):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            stt._words = good_words
+        return _orig_gen(audio, **kw)
+    stt.generate = stt_generate
+    monkeypatch.setattr(render, "_get_model", lambda: tts)
+    monkeypatch.setattr(render, "_get_stt", lambda: stt)
+    import mlx.core as mx
+    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
+    def _fake_write(path, audio, sample_rate):
+        import wave, struct
+        path.parent.mkdir(parents=True, exist_ok=True)
+        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
+            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+    monkeypatch.setattr(render, "_write_audio", _fake_write)
+
+    out = tmp_path / "out.wav"
+    result = render.render(
+        script="hi", out_path=out, voice="excited",
+        voices_path=sample_voices_path,
+        max_retries=3, max_silence_gap=2.5,
+    )
+    assert result.attempts_used == 2
+    assert result.quality_passed is True
+    assert len(tts.calls) == 2
+
+
+def test_render_exhausts_retries_and_marks_failed(monkeypatch, tmp_path, sample_voices_path):
+    import vo.render as render
+    bad_words = [
+        {"start": 0.0, "end": 1.0, "word": "a"},
+        {"start": 6.0, "end": 7.0, "word": "b"},
+    ]
+    tts = FakeFishModel()
+    stt = FakeWhisper(words=bad_words)
+    monkeypatch.setattr(render, "_get_model", lambda: tts)
+    monkeypatch.setattr(render, "_get_stt", lambda: stt)
+    import mlx.core as mx
+    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
+    def _fake_write(path, audio, sample_rate):
+        import wave, struct
+        path.parent.mkdir(parents=True, exist_ok=True)
+        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
+            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+    monkeypatch.setattr(render, "_write_audio", _fake_write)
+    out = tmp_path / "out.wav"
+    result = render.render(
+        script="hi", out_path=out, voice="excited",
+        voices_path=sample_voices_path,
+        max_retries=3, max_silence_gap=2.5,
+    )
+    assert result.attempts_used == 3
+    assert result.quality_passed is False
+
+
+def test_render_no_stt_skips_quality_gate(monkeypatch, tmp_path, sample_voices_path):
+    import vo.render as render
+    tts = FakeFishModel()
+    stt_called = {"n": 0}
+    def boom():
+        stt_called["n"] += 1
+        raise RuntimeError("should not be called")
+    monkeypatch.setattr(render, "_get_model", lambda: tts)
+    monkeypatch.setattr(render, "_get_stt", boom)
+    import mlx.core as mx
+    monkeypatch.setattr(render, "_load_ref_audio", lambda path, sr: mx.zeros((sr,)))
+    def _fake_write(path, audio, sample_rate):
+        import wave, struct
+        path.parent.mkdir(parents=True, exist_ok=True)
+        n = audio.shape[0] if hasattr(audio, "shape") else len(audio)
+        with wave.open(str(path), "w") as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sample_rate)
+            wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+    monkeypatch.setattr(render, "_write_audio", _fake_write)
+    out = tmp_path / "out.wav"
+    result = render.render(script="hi", out_path=out, voice="excited",
+                           voices_path=sample_voices_path, no_stt=True)
+    assert stt_called["n"] == 0
+    assert result.words_path is None
+    assert result.quality_passed is True
