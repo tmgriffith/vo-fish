@@ -8,5 +8,8 @@ def __getattr__(name: str):
     # Lazy import so just importing the package doesn't load the model.
     if name in ("render", "RenderResult"):
         from vo.render import render, RenderResult
-        return {"render": render, "RenderResult": RenderResult}[name]
+        mapping = {"render": render, "RenderResult": RenderResult}
+        # Cache to avoid repeated imports on subsequent accesses.
+        globals().update(mapping)
+        return mapping[name]
     raise AttributeError(name)

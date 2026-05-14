@@ -71,3 +71,29 @@ class FakeWhisper:
     def generate(self, audio, **kw):
         self.calls.append((audio, kw))
         return _FakeWhisperResult([_FakeSegment(self.transcript, self._words)])
+
+
+# --- mocked Fish Speech ------------------------------------------------
+
+class _FakeGenResult:
+    def __init__(self, audio):
+        self.audio = audio
+
+
+class FakeFishModel:
+    """Stand-in for the loaded Fish Speech model in tests."""
+    def __init__(self, sample_rate=44100, audio_seconds=2.0, words=None):
+        self.sample_rate = sample_rate
+        self.audio_seconds = audio_seconds
+        self.calls = []
+        # Predetermined Whisper output for the quality gate
+        self.words = words or [
+            {"start": 0.0, "end": 0.5, "word": "hello"},
+            {"start": 0.5, "end": 1.0, "word": "world"},
+        ]
+    def generate(self, **kwargs):
+        self.calls.append(kwargs)
+        import mlx.core as mx
+        n = int(self.sample_rate * self.audio_seconds)
+        audio = mx.zeros((n,))
+        return iter([_FakeGenResult(audio)])
