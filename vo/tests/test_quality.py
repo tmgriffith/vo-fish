@@ -148,3 +148,45 @@ def test_find_anchor_starts_enforces_monotonic_increase():
     starts = find_anchor_starts(words, [["beta"], ["alpha"]])
     # second anchor must find the post-cursor "alpha" at 2.0
     assert starts == [1.0, 2.0]
+
+
+# ---------- evaluator --------------------------------------------------
+
+def test_evaluate_passes_with_clean_words():
+    from vo.quality import evaluate
+    words = _words((0.0, "a"), (0.5, "b"), (1.0, "c"))
+    result = evaluate(words, max_silence_gap=2.5, anchors=None)
+    assert result.passed is True
+    assert result.reason == ""
+
+
+def test_evaluate_fails_on_silence_gap():
+    from vo.quality import evaluate
+    words = [Word(0.0, 1.0, "a"), Word(5.0, 6.0, "b")]
+    result = evaluate(words, max_silence_gap=2.5, anchors=None)
+    assert result.passed is False
+    assert "silence gap" in result.reason
+    assert result.max_gap == pytest.approx(4.0)
+
+
+def test_evaluate_fails_when_anchor_missing():
+    from vo.quality import evaluate
+    words = _words((0.0, "a"), (0.5, "b"))
+    result = evaluate(words, max_silence_gap=2.5, anchors=[["nope"]])
+    assert result.passed is False
+    assert "anchor" in result.reason
+
+
+def test_evaluate_passes_with_anchors_found():
+    from vo.quality import evaluate
+    words = _words((0.0, "alpha"), (0.5, "beta"), (1.0, "gamma"))
+    result = evaluate(words, max_silence_gap=2.5, anchors=[["alpha"], ["gamma"]])
+    assert result.passed is True
+    assert result.anchor_starts == [0.0, 1.0]
+
+
+def test_evaluate_fails_on_empty_words():
+    from vo.quality import evaluate
+    result = evaluate([], max_silence_gap=2.5, anchors=None)
+    assert result.passed is False
+    assert "no words" in result.reason.lower()

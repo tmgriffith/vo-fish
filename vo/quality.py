@@ -134,5 +134,34 @@ class QualityCheck:
     reason: str = ""
 
 
-def evaluate(words, max_silence_gap, anchors=None):
-    raise NotImplementedError
+def evaluate(
+    words: list[Word],
+    max_silence_gap: float,
+    anchors: list[list[str]] | None = None,
+) -> QualityCheck:
+    """Run the quality gate. Returns a QualityCheck."""
+    if not words:
+        return QualityCheck(passed=False, max_gap=float("inf"),
+                            anchor_starts=None, reason="no words transcribed")
+
+    gap = largest_word_gap(words)
+    anchor_starts: list[float] | None = None
+    reasons: list[str] = []
+
+    if gap > max_silence_gap:
+        reasons.append(
+            f"silence gap {gap:.2f}s exceeds threshold {max_silence_gap:.2f}s"
+        )
+
+    if anchors:
+        anchor_starts = find_anchor_starts(words, anchors)
+        if anchor_starts is None:
+            reasons.append("no anchor phrases located in transcript")
+
+    passed = not reasons
+    return QualityCheck(
+        passed=passed,
+        max_gap=gap,
+        anchor_starts=anchor_starts,
+        reason="; ".join(reasons),
+    )
