@@ -345,6 +345,41 @@ def main(argv: list[str] | None = None) -> int:
         "attempts_used": result.attempts_used,
         "quality_passed": result.quality_passed,
     }))
+
+    if args.save_voice and result.quality_passed and args.ref_audio:
+        from vo.registries import Voice as _Voice, add_voice as _add_voice
+        # Reuse the transcript we already resolved (via resolve_voice in render);
+        # re-resolve here to avoid threading it through RenderResult.
+        from vo.voice_resolver import resolve_voice as _resolve
+        rv = _resolve(voice_id=None, ref_audio=Path(args.ref_audio),
+                      ref_text=args.ref_text, voices_path=Path(args.voices_path))
+        v = _Voice(
+            id=args.save_voice,
+            label=args.label or args.save_voice,
+            audio=str(Path(args.ref_audio)),
+            transcript=rv.transcript or "",
+            notes=args.notes or "",
+        )
+        _add_voice(v, Path(args.voices_path))
+        print(_cli_json.dumps({"saved_voice": args.save_voice}))
+
+    if args.save_preset and result.quality_passed:
+        from vo.registries import Preset as _Preset, add_preset as _add_preset
+        p = _Preset(
+            name=args.save_preset,
+            voice=args.voice,
+            tag_hints=[],
+            tag_density="medium",
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            speed=args.speed,
+            language=args.language,
+            notes=args.preset_notes or "",
+        )
+        _add_preset(p, Path(args.presets_path))
+        print(_cli_json.dumps({"saved_preset": args.save_preset}))
+
     return 0 if result.quality_passed else 5
 
 

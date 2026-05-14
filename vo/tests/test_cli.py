@@ -168,3 +168,49 @@ def test_cli_transcribe_prints_transcript(cli_setup, monkeypatch, tmp_path, caps
     rc = render.main(["--transcribe", str(audio)])
     assert rc == 0
     assert "transcribed!" in capsys.readouterr().out
+
+
+def test_cli_save_voice_after_ref_audio_run(cli_setup, monkeypatch, tmp_path):
+    _, _, voices, tmp = cli_setup
+    audio = tmp / "ref.wav"
+    audio.write_bytes(b"")
+    monkeypatch.setattr("vo.transcribe.transcribe", lambda p: "auto txt")
+    script = tmp / "s.txt"
+    script.write_text("hi")
+    out = tmp / "o.wav"
+    rc = render.main([
+        "--script", str(script), "--out", str(out),
+        "--ref-audio", str(audio),
+        "--save-voice", "newone", "--label", "Newone",
+        "--voices-path", str(voices),
+    ])
+    assert rc == 0
+    import json
+    data = json.loads(voices.read_text())
+    assert "newone" in data["voices"]
+    assert data["voices"]["newone"]["label"] == "Newone"
+
+
+def test_cli_save_preset_after_run(cli_setup, tmp_path):
+    import json
+    _, _, voices, tmp = cli_setup
+    presets = tmp / "presets.json"
+    presets.write_text('{"version":1,"presets":{}}')
+    script = tmp / "s.txt"; script.write_text("hi")
+    out = tmp / "o.wav"
+    rc = render.main([
+        "--script", str(script), "--out", str(out),
+        "--voice", "excited",
+        "--temperature", "0.85", "--speed", "1.1",
+        "--save-preset", "winning",
+        "--preset-notes", "Captured from a good run",
+        "--voices-path", str(voices),
+        "--presets-path", str(presets),
+    ])
+    assert rc == 0
+    data = json.loads(presets.read_text())
+    p = data["presets"]["winning"]
+    assert p["temperature"] == 0.85
+    assert p["speed"] == 1.1
+    assert p["voice"] == "excited"
+    assert p["notes"] == "Captured from a good run"
