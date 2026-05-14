@@ -1,12 +1,27 @@
 """Fish Audio S2 Pro renderer — the only module that touches MLX."""
 from __future__ import annotations
 
+# Bootstrap: when invoked as `python vo/render.py ...`, the project root isn't
+# on sys.path. Inject it so `from vo import ...` works.
+import sys as _sys
+from pathlib import Path as _Path
+_project_root = _Path(__file__).resolve().parent.parent
+if str(_project_root) not in _sys.path:
+    _sys.path.insert(0, str(_project_root))
+
+try:
+    from vo import _version_check  # noqa: F401
+except ImportError as _e:
+    # Spec-documented exit code 4 for version-pin mismatch.
+    if __name__ == "__main__":
+        print(f"error: {_e}", file=_sys.stderr)
+        _sys.exit(4)
+    raise
+
 from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
-
-from vo import _version_check  # noqa: F401
 from vo.registries import DEFAULT_VOICES_PATH
 from vo.tags import apply_tag_mode
 from vo.voice_resolver import resolve_voice
@@ -21,12 +36,22 @@ _STT = None
 _MODEL_PATH = "~/Library/Caches/mlx-audio/fish-audio-s2-pro-bf16"
 
 
+class ModelNotInstalledError(RuntimeError):
+    """Fish Speech model not found at the expected MLX cache path."""
+
+
 def _get_model():
     global _MODEL
     if _MODEL is None:
         import os
+        path = os.path.expanduser(_MODEL_PATH)
+        if not os.path.isdir(path):
+            raise ModelNotInstalledError(
+                f"Fish Speech model not found at {path}. "
+                f"Install: hf download mlx-community/fish-audio-s2-pro-bf16 --local-dir {path}"
+            )
         from mlx_audio.tts.utils import load_model
-        _MODEL = load_model(os.path.expanduser(_MODEL_PATH))
+        _MODEL = load_model(path)
     return _MODEL
 
 
@@ -226,10 +251,19 @@ def _build_parser() -> argparse.ArgumentParser:
                         "'[[\"most\",\"content\"],[\"that\\u2019s\",\"not\"]]'.")
 
     # Features
-    p.add_argument("--multi-speaker", action="store_true")
-    p.add_argument("--language", default="en")
+    p.add_argument(
+        "--multi-speaker", action="store_true",
+        help="Informational: pass-through for scripts containing <|speaker:i|> tokens. "
+             "Fish Speech reads speaker tokens directly from the input text; no extra flag needed at the model layer.")
+    p.add_argument(
+        "--language", default="en",
+        help="Informational: Fish Speech auto-detects language from the input text. "
+             "This flag is captured for metadata only; it is not passed to the model.")
     p.add_argument("--tag-mode", choices=["auto", "explicit", "none"], default="auto")
-    p.add_argument("--seed", type=int)
+    p.add_argument(
+        "--seed", type=int,
+        help="Reserved: Fish Speech does not currently expose a deterministic seed. "
+             "Accepted for forward compatibility; ignored today.")
 
     # Registry paths (mainly for tests; can also be overridden in practice)
     p.add_argument("--voices-path", default=str(DEFAULT_VOICES_PATH))
@@ -336,6 +370,9 @@ def main(argv: list[str] | None = None) -> int:
             max_retries=args.max_retries,
             max_silence_gap=args.max_silence_gap,
         )
+    except ModelNotInstalledError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 3
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

@@ -216,6 +216,26 @@ def test_cli_save_preset_after_run(cli_setup, tmp_path):
     assert p["notes"] == "Captured from a good run"
 
 
+def test_cli_model_not_installed_returns_3(cli_setup, monkeypatch, tmp_path):
+    """If the Fish Speech model isn't installed, exit with code 3."""
+    from vo.render import ModelNotInstalledError
+    _, _, voices, tmp = cli_setup
+    script = tmp / "s.txt"
+    script.write_text("hi")
+    out = tmp / "o.wav"
+
+    def boom():
+        raise ModelNotInstalledError("test: not installed")
+    monkeypatch.setattr(render, "_get_model", boom)
+
+    rc = render.main([
+        "--script", str(script), "--out", str(out),
+        "--voice", "excited",
+        "--voices-path", str(voices),
+    ])
+    assert rc == 3
+
+
 def test_cli_missing_presets_file_returns_2(cli_setup, tmp_path):
     _, _, voices, tmp = cli_setup
     script = tmp / "s.txt"; script.write_text("hi")
