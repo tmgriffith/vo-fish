@@ -291,10 +291,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Preset defaults (--no-preset wins)
     if args.preset and not args.no_preset:
+        from vo.registries import RegistryError as _RegistryError
         try:
             preset = load_presets(Path(args.presets_path))[args.preset]
         except KeyError:
             print(f"error: unknown preset {args.preset!r}", file=sys.stderr)
+            return 2
+        except _RegistryError as e:
+            print(f"error: {e}", file=sys.stderr)
             return 2
         _apply_preset(args, preset)
 

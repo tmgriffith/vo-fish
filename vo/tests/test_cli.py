@@ -214,3 +214,17 @@ def test_cli_save_preset_after_run(cli_setup, tmp_path):
     assert p["speed"] == 1.1
     assert p["voice"] == "excited"
     assert p["notes"] == "Captured from a good run"
+
+
+def test_cli_missing_presets_file_returns_2(cli_setup, tmp_path):
+    _, _, voices, tmp = cli_setup
+    script = tmp / "s.txt"; script.write_text("hi")
+    out = tmp / "o.wav"
+    rc = render.main([
+        "--script", str(script), "--out", str(out),
+        "--voice", "excited",
+        "--preset", "anything",
+        "--voices-path", str(voices),
+        "--presets-path", str(tmp / "does_not_exist.json"),
+    ])
+    assert rc == 2
