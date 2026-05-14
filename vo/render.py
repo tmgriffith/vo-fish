@@ -178,3 +178,181 @@ def render(
         attempts_used=attempts_used,
         quality_passed=final_check.passed,
     )
+
+
+# ---- CLI ---------------------------------------------------------------
+
+import argparse
+import json as _cli_json
+
+from vo.registries import (
+    DEFAULT_PRESETS_PATH, load_presets, Preset,
+)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="vo",
+        description="Fish Audio S2 Pro voiceover renderer.",
+    )
+    p.add_argument("--script", help="Script file (- for stdin).")
+    p.add_argument("--out", help="Output WAV path.")
+
+    # Voice selection (mutually exclusive enforced post-parse, not via argparse,
+    # because the spec requires a custom error message).
+    p.add_argument("--voice", help="Voice ID from voices.json.")
+    p.add_argument("--ref-audio", help="Ad-hoc reference audio path.")
+    p.add_argument("--ref-text", help="Transcript of --ref-audio. Auto-Whispered if missing.")
+
+    # Preset
+    p.add_argument("--preset", help="Preset name (defaults from presets.json).")
+    p.add_argument("--no-preset", action="store_true",
+                   help="Ignore any preset defaults.")
+
+    # Sampling
+    p.add_argument("--temperature", type=float)
+    p.add_argument("--top-p", type=float)
+    p.add_argument("--top-k", type=int)
+    p.add_argument("--speed", type=float)
+    p.add_argument("--max-tokens", type=int, default=4096)
+    p.add_argument("--chunk-length", type=int, default=300)
+
+    # Quality gate
+    p.add_argument("--max-retries", type=int, default=4)
+    p.add_argument("--max-silence-gap", type=float, default=2.5)
+    p.add_argument("--no-stt", action="store_true")
+    p.add_argument("--anchors-json",
+                   help="JSON-encoded list of anchor phrase lists, e.g. "
+                        "'[[\"most\",\"content\"],[\"that\\u2019s\",\"not\"]]'.")
+
+    # Features
+    p.add_argument("--multi-speaker", action="store_true")
+    p.add_argument("--language", default="en")
+    p.add_argument("--tag-mode", choices=["auto", "explicit", "none"], default="auto")
+    p.add_argument("--seed", type=int)
+
+    # Registry paths (mainly for tests; can also be overridden in practice)
+    p.add_argument("--voices-path", default=str(DEFAULT_VOICES_PATH))
+    p.add_argument("--presets-path", default=str(DEFAULT_PRESETS_PATH))
+
+    # Admin paths (filled in next task)
+    p.add_argument("--save-voice")
+    p.add_argument("--label")
+    p.add_argument("--notes")
+    p.add_argument("--save-preset")
+    p.add_argument("--preset-notes")
+    p.add_argument("--add-voice")
+    p.add_argument("--audio")
+    p.add_argument("--transcript")
+    p.add_argument("--add-preset")
+    p.add_argument("--json")
+    p.add_argument("--transcribe")
+
+    return p
+
+
+def _read_script(arg: str) -> str:
+    if arg == "-":
+        return sys.stdin.read()
+    return Path(arg).read_text()
+
+
+def _apply_preset(args, preset: Preset) -> None:
+    """Fill un-set sampling args from preset defaults."""
+    if args.voice is None and preset.voice is not None:
+        args.voice = preset.voice
+    if args.temperature is None:
+        args.temperature = preset.temperature
+    if args.top_p is None:
+        args.top_p = preset.top_p
+    if args.top_k is None:
+        args.top_k = preset.top_k
+    if args.speed is None:
+        args.speed = preset.speed
+    if args.language == "en" and preset.language != "en":
+        args.language = preset.language
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    # Admin paths handled in a later task; here we only do the render path.
+    if any([args.add_voice, args.add_preset, args.transcribe]):
+        return _admin_main(args)
+
+    if not args.script or not args.out:
+        parser.error("--script and --out are required for rendering")
+
+    if args.voice and args.ref_audio:
+        print("error: cannot supply both --voice and --ref-audio",
+              file=sys.stderr)
+        return 2
+
+    # Preset defaults (--no-preset wins)
+    if args.preset and not args.no_preset:
+        try:
+            preset = load_presets(Path(args.presets_path))[args.preset]
+        except KeyError:
+            print(f"error: unknown preset {args.preset!r}", file=sys.stderr)
+            return 2
+        _apply_preset(args, preset)
+
+    # Final fallback defaults
+    if args.temperature is None: args.temperature = 0.7
+    if args.top_p is None:       args.top_p = 0.7
+    if args.top_k is None:       args.top_k = 30
+    if args.speed is None:       args.speed = 1.0
+
+    anchors = None
+    if args.anchors_json:
+        anchors = _cli_json.loads(args.anchors_json)
+
+    script_text = _read_script(args.script)
+
+    try:
+        result = render(
+            script=script_text,
+            out_path=Path(args.out),
+            voice=args.voice,
+            ref_audio=Path(args.ref_audio) if args.ref_audio else None,
+            ref_text=args.ref_text,
+            voices_path=Path(args.voices_path),
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            speed=args.speed,
+            max_tokens=args.max_tokens,
+            chunk_length=args.chunk_length,
+            no_stt=args.no_stt,
+            multi_speaker=args.multi_speaker,
+            language=args.language,
+            tag_mode=args.tag_mode,
+            anchors=anchors,
+            max_retries=args.max_retries,
+            max_silence_gap=args.max_silence_gap,
+        )
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    print(_cli_json.dumps({
+        "wav": str(result.wav_path),
+        "words": str(result.words_path) if result.words_path else None,
+        "tagged": str(result.tagged_path),
+        "voice_id": result.voice_id,
+        "duration_s": result.duration_s,
+        "attempts_used": result.attempts_used,
+        "quality_passed": result.quality_passed,
+    }))
+    return 0 if result.quality_passed else 5
+
+
+def _admin_main(args) -> int:
+    """Stub — implemented in the next task."""
+    print("error: admin paths not yet implemented", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
