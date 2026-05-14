@@ -115,8 +115,24 @@ def get_voice(voice_id: str, path: Path = DEFAULT_VOICES_PATH) -> Voice:
 
 
 def add_voice(voice: Voice, path: Path = DEFAULT_VOICES_PATH) -> None:
-    """Stub — implemented in next task."""
-    raise NotImplementedError
+    """Insert or overwrite a voice entry. Creates the file if missing."""
+    if path.exists():
+        data = _read_json(path)
+    else:
+        data = {"version": 1, "voices": {}}
+    data.setdefault("voices", {})
+    entry: dict[str, Any] = {
+        "label": voice.label,
+        "audio": voice.audio,
+        "transcript": voice.transcript,
+    }
+    if voice.notes:
+        entry["notes"] = voice.notes
+    for k, v in voice.extra.items():
+        if k not in entry:
+            entry[k] = v
+    data["voices"][voice.id] = entry
+    _write_json(path, data)
 
 
 def load_presets(path: Path = DEFAULT_PRESETS_PATH) -> dict[str, Preset]:
