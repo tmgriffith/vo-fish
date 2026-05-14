@@ -1,0 +1,8 @@
+.venv-mlx/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+*.tagged.txt
+*.words.json
+/tmp/
