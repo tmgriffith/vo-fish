@@ -349,8 +349,68 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _admin_main(args) -> int:
-    """Stub — implemented in the next task."""
-    print("error: admin paths not yet implemented", file=sys.stderr)
+    from vo.registries import add_voice, add_preset, Voice, Preset
+
+    if args.transcribe:
+        from vo.transcribe import transcribe
+        audio = Path(args.transcribe)
+        if not audio.exists():
+            print(f"error: not found: {audio}", file=sys.stderr)
+            return 2
+        text = transcribe(audio)
+        print(text.strip())
+        return 0
+
+    if args.add_voice:
+        if not args.audio:
+            print("error: --add-voice requires --audio", file=sys.stderr)
+            return 2
+        audio_path = Path(args.audio)
+        if not audio_path.exists():
+            print(f"error: --audio not found: {audio_path}", file=sys.stderr)
+            return 2
+        transcript = args.transcript
+        if transcript is None:
+            from vo.transcribe import transcribe
+            transcript = transcribe(audio_path).strip()
+        v = Voice(
+            id=args.add_voice,
+            label=args.label or args.add_voice,
+            audio=str(audio_path),
+            transcript=transcript,
+            notes=args.notes or "",
+        )
+        add_voice(v, Path(args.voices_path))
+        print(_cli_json.dumps({"added_voice": args.add_voice,
+                               "path": args.voices_path}))
+        return 0
+
+    if args.add_preset:
+        if not args.json:
+            print("error: --add-preset requires --json", file=sys.stderr)
+            return 2
+        try:
+            payload = _cli_json.loads(args.json)
+        except _cli_json.JSONDecodeError as e:
+            print(f"error: --json invalid: {e}", file=sys.stderr)
+            return 2
+        p = Preset(
+            name=args.add_preset,
+            voice=payload.get("voice"),
+            tag_hints=list(payload.get("tag_hints", [])),
+            tag_density=payload.get("tag_density", "medium"),
+            temperature=float(payload.get("temperature", 0.7)),
+            top_p=float(payload.get("top_p", 0.7)),
+            top_k=int(payload.get("top_k", 30)),
+            speed=float(payload.get("speed", 1.0)),
+            language=payload.get("language", "en"),
+            notes=args.preset_notes or payload.get("notes", ""),
+        )
+        add_preset(p, Path(args.presets_path))
+        print(_cli_json.dumps({"added_preset": args.add_preset,
+                               "path": args.presets_path}))
+        return 0
+
     return 1
 
 

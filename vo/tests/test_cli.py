@@ -108,3 +108,63 @@ def test_cli_explicit_flags_override_preset(cli_setup, tmp_path):
 class _StringIO:
     def __init__(self, s): self.s = s
     def read(self): return self.s
+
+
+def test_cli_add_voice_writes_registry(cli_setup, tmp_path):
+    _, _, voices, tmp = cli_setup
+    audio = tmp / "ref.wav"
+    audio.write_bytes(b"")
+    rc = render.main([
+        "--add-voice", "newone",
+        "--audio", str(audio),
+        "--transcript", "the transcript",
+        "--label", "Newone",
+        "--voices-path", str(voices),
+    ])
+    assert rc == 0
+    import json
+    data = json.loads(voices.read_text())
+    assert data["voices"]["newone"]["label"] == "Newone"
+    assert data["voices"]["newone"]["transcript"] == "the transcript"
+
+
+def test_cli_add_voice_auto_transcribes(cli_setup, monkeypatch, tmp_path):
+    _, _, voices, tmp = cli_setup
+    audio = tmp / "ref.wav"
+    audio.write_bytes(b"")
+    monkeypatch.setattr("vo.transcribe.transcribe", lambda p: "auto txt")
+    rc = render.main([
+        "--add-voice", "v2",
+        "--audio", str(audio),
+        "--voices-path", str(voices),
+    ])
+    assert rc == 0
+    import json
+    assert json.loads(voices.read_text())["voices"]["v2"]["transcript"] == "auto txt"
+
+
+def test_cli_add_preset_writes_registry(cli_setup, tmp_path):
+    _, _, _, tmp = cli_setup
+    presets = tmp / "presets.json"
+    presets.write_text('{"version":1,"presets":{}}')
+    payload = '{"voice":"excited","temperature":0.8,"tag_density":"high"}'
+    rc = render.main([
+        "--add-preset", "newp",
+        "--json", payload,
+        "--presets-path", str(presets),
+    ])
+    assert rc == 0
+    import json
+    data = json.loads(presets.read_text())
+    assert data["presets"]["newp"]["temperature"] == 0.8
+    assert data["presets"]["newp"]["tag_density"] == "high"
+
+
+def test_cli_transcribe_prints_transcript(cli_setup, monkeypatch, tmp_path, capsys):
+    _, _, _, tmp = cli_setup
+    audio = tmp / "a.wav"
+    audio.write_bytes(b"")
+    monkeypatch.setattr("vo.transcribe.transcribe", lambda p: "transcribed!")
+    rc = render.main(["--transcribe", str(audio)])
+    assert rc == 0
+    assert "transcribed!" in capsys.readouterr().out
