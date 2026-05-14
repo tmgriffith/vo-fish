@@ -80,3 +80,71 @@ def test_largest_word_gap_single_word_is_inf():
 
 def test_largest_word_gap_empty_is_inf():
     assert largest_word_gap([]) == float("inf")
+
+
+# ---------- anchor matching --------------------------------------------
+
+def _words(*pairs):
+    """Helper: [(t_start, 'text'), ...] -> [Word(...)]."""
+    out = []
+    for i, (start, txt) in enumerate(pairs):
+        out.append(Word(start, start + 0.4, txt))
+    return out
+
+
+def test_find_anchor_starts_locates_each_anchor():
+    from vo.quality import find_anchor_starts
+    words = _words(
+        (0.0, "most"), (0.5, "content"), (1.0, "creators"), (1.5, "are"),
+        (3.0, "that's"), (3.5, "not"), (4.0, "a"), (4.5, "storage"),
+        (6.0, "you"), (6.5, "shot"), (7.0, "it"),
+    )
+    anchors = [
+        ["most", "content", "creators"],
+        ["that's", "not", "a", "storage"],
+        ["you", "shot", "it"],
+    ]
+    starts = find_anchor_starts(words, anchors)
+    assert starts == [0.0, 3.0, 6.0]
+
+
+def test_find_anchor_starts_tolerates_extra_filler_word():
+    from vo.quality import find_anchor_starts
+    # "the fix really isn't" — "really" is an extra word
+    words = _words(
+        (0.0, "the"), (0.4, "fix"), (0.8, "really"), (1.2, "isn't"),
+    )
+    starts = find_anchor_starts(words, [["the", "fix", "isn't"]])
+    assert starts == [0.0]
+
+
+def test_find_anchor_starts_returns_none_if_none_match():
+    from vo.quality import find_anchor_starts
+    words = _words((0.0, "wat"), (0.5, "huh"))
+    assert find_anchor_starts(words, [["nope", "nope"]]) is None
+
+
+def test_find_anchor_starts_backfills_missing_with_neighbours():
+    from vo.quality import find_anchor_starts
+    # Middle anchor missing, neighbours present
+    words = _words(
+        (0.0, "alpha"), (1.0, "beta"),
+        # gamma missing
+        (3.0, "delta"),
+    )
+    anchors = [["alpha"], ["gamma"], ["delta"]]
+    starts = find_anchor_starts(words, anchors)
+    assert starts is not None
+    assert starts[0] == 0.0
+    assert starts[2] == 3.0
+    assert 0.0 < starts[1] < 3.0
+
+
+def test_find_anchor_starts_enforces_monotonic_increase():
+    from vo.quality import find_anchor_starts
+    # Second anchor matches a word that occurs BEFORE the first anchor.
+    # Implementation should refuse to go backwards.
+    words = _words((0.0, "alpha"), (1.0, "beta"), (2.0, "alpha"))
+    starts = find_anchor_starts(words, [["beta"], ["alpha"]])
+    # second anchor must find the post-cursor "alpha" at 2.0
+    assert starts == [1.0, 2.0]

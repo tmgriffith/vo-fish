@@ -64,9 +64,66 @@ def largest_word_gap(words: list[Word]) -> float:
     return max(words[i].start - words[i - 1].end for i in range(1, len(words)))
 
 
-def find_anchor_starts(words, anchors):
-    """Placeholder — implemented in next task."""
-    raise NotImplementedError
+def find_anchor_starts(words: list[Word], anchors: list[list[str]]) -> list[float] | None:
+    """For each anchor (a list of consecutive content words), find the start
+    time of its first word in `words`. Anchors are matched in order; the
+    search cursor advances after each match so anchors stay monotonic.
+
+    Up to 3 stray words are allowed between consecutive anchor words to absorb
+    Whisper filler/punctuation glitches.
+
+    Returns:
+      list of floats (one per anchor). If a specific anchor can't be matched
+      it gets backfilled by averaging its surrounding matched anchors. If no
+      anchor matches at all, returns None.
+    """
+    norm = [(w.start, w.end, w.text) for w in words]
+    starts: list[float | None] = []
+    cursor = 0
+    for anchor in anchors:
+        if not anchor:
+            starts.append(None)
+            continue
+        head = anchor[0]
+        found = None
+        i = cursor
+        while i < len(norm):
+            if norm[i][2] == head:
+                # try to match the rest of the anchor within a small window
+                j = i
+                ok = True
+                for tok in anchor[1:]:
+                    advanced = False
+                    for k in range(j + 1, min(j + 5, len(norm))):
+                        if norm[k][2] == tok:
+                            j = k
+                            advanced = True
+                            break
+                    if not advanced:
+                        ok = False
+                        break
+                if ok:
+                    found = norm[i][0]
+                    cursor = j + 1
+                    break
+            i += 1
+        starts.append(found)
+
+    if all(s is None for s in starts):
+        return None
+
+    last_end = norm[-1][1] if norm else 0.0
+    for idx in range(len(starts)):
+        if starts[idx] is None:
+            prev = next((starts[k] for k in range(idx - 1, -1, -1) if starts[k] is not None), 0.0)
+            nxt = next((starts[k] for k in range(idx + 1, len(starts)) if starts[k] is not None), last_end)
+            starts[idx] = (prev + nxt) / 2
+
+    # enforce monotonic increase
+    for i in range(1, len(starts)):
+        if starts[i] <= starts[i - 1]:
+            starts[i] = starts[i - 1] + 0.1
+    return [float(s) for s in starts]  # type: ignore[arg-type]
 
 
 @dataclass
