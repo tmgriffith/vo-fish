@@ -113,3 +113,70 @@ def test_add_voice_writes_extra_fields(tmp_voices_path):
     add_voice(v, tmp_voices_path)
     raw = json.loads(tmp_voices_path.read_text())
     assert raw["voices"]["v"]["created_at"] == "2026-05-14"
+
+
+# ---------- presets.json -----------------------------------------------
+
+@pytest.fixture
+def sample_presets_path(tmp_path):
+    p = tmp_path / "presets.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "presets": {
+            "fb-reel-hype": {
+                "voice": "excited",
+                "tag_hints": ["[emphasis]", "[excited]"],
+                "tag_density": "high",
+                "temperature": 0.75,
+                "speed": 1.05,
+                "notes": "Fast-paced FB/IG narration."
+            }
+        }
+    }))
+    return p
+
+
+def test_load_presets_returns_preset_objects(sample_presets_path):
+    presets = load_presets(sample_presets_path)
+    assert "fb-reel-hype" in presets
+    p = presets["fb-reel-hype"]
+    assert isinstance(p, Preset)
+    assert p.voice == "excited"
+    assert p.tag_density == "high"
+    assert p.temperature == 0.75
+    assert p.speed == 1.05
+
+
+def test_load_presets_applies_defaults_for_missing_fields(tmp_path):
+    p = tmp_path / "presets.json"
+    p.write_text(json.dumps({"version": 1, "presets": {
+        "minimal": {"notes": "just a stub"}
+    }}))
+    presets = load_presets(p)
+    m = presets["minimal"]
+    assert m.voice is None
+    assert m.tag_density == "medium"
+    assert m.temperature == 0.7
+    assert m.speed == 1.0
+
+
+def test_load_presets_tolerates_unknown_fields(tmp_path):
+    p = tmp_path / "presets.json"
+    p.write_text(json.dumps({"version": 1, "presets": {
+        "x": {"voice": "v", "future": "ignored"}
+    }}))
+    presets = load_presets(p)
+    assert presets["x"].extra["future"] == "ignored"
+
+
+def test_get_preset_unknown_lists_available(sample_presets_path):
+    with pytest.raises(RegistryError, match=r"unknown preset 'nope'.*available: fb-reel-hype"):
+        get_preset("nope", sample_presets_path)
+
+
+def test_add_preset_writes_and_preserves(sample_presets_path):
+    p = Preset(name="new", voice="excited", tag_density="low")
+    add_preset(p, sample_presets_path)
+    presets = load_presets(sample_presets_path)
+    assert set(presets.keys()) == {"fb-reel-hype", "new"}
+    assert presets["new"].tag_density == "low"

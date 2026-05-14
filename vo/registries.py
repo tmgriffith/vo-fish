@@ -135,14 +135,71 @@ def add_voice(voice: Voice, path: Path = DEFAULT_VOICES_PATH) -> None:
     _write_json(path, data)
 
 
+_PRESET_DEFAULTS = {
+    "voice": None,
+    "tag_hints": [],
+    "tag_density": "medium",
+    "temperature": 0.7,
+    "top_p": 0.7,
+    "top_k": 30,
+    "speed": 1.0,
+    "language": "en",
+    "notes": "",
+}
+_PRESET_KNOWN = set(_PRESET_DEFAULTS) | {"name"}
+
+
 def load_presets(path: Path = DEFAULT_PRESETS_PATH) -> dict[str, Preset]:
-    """Stub — implemented in next task."""
-    raise NotImplementedError
+    raw = _read_json(path)
+    presets_raw = raw.get("presets", {})
+    out: dict[str, Preset] = {}
+    for name, data in presets_raw.items():
+        merged = {**_PRESET_DEFAULTS, **{k: v for k, v in data.items() if k in _PRESET_DEFAULTS}}
+        extra = {k: v for k, v in data.items() if k not in _PRESET_KNOWN}
+        out[name] = Preset(
+            name=name,
+            voice=merged["voice"],
+            tag_hints=list(merged["tag_hints"]),
+            tag_density=merged["tag_density"],
+            temperature=float(merged["temperature"]),
+            top_p=float(merged["top_p"]),
+            top_k=int(merged["top_k"]),
+            speed=float(merged["speed"]),
+            language=merged["language"],
+            notes=merged["notes"],
+            extra=extra,
+        )
+    return out
 
 
 def get_preset(name: str, path: Path = DEFAULT_PRESETS_PATH) -> Preset:
-    raise NotImplementedError
+    presets = load_presets(path)
+    if name not in presets:
+        available = ", ".join(sorted(presets)) or "(none)"
+        raise RegistryError(f"unknown preset {name!r} — available: {available}")
+    return presets[name]
 
 
 def add_preset(preset: Preset, path: Path = DEFAULT_PRESETS_PATH) -> None:
-    raise NotImplementedError
+    if path.exists():
+        data = _read_json(path)
+    else:
+        data = {"version": 1, "presets": {}}
+    data.setdefault("presets", {})
+    entry: dict[str, Any] = {
+        "voice": preset.voice,
+        "tag_hints": list(preset.tag_hints),
+        "tag_density": preset.tag_density,
+        "temperature": preset.temperature,
+        "top_p": preset.top_p,
+        "top_k": preset.top_k,
+        "speed": preset.speed,
+        "language": preset.language,
+    }
+    if preset.notes:
+        entry["notes"] = preset.notes
+    for k, v in preset.extra.items():
+        if k not in entry:
+            entry[k] = v
+    data["presets"][preset.name] = entry
+    _write_json(path, data)
