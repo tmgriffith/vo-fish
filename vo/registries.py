@@ -62,9 +62,14 @@ def _read_json(path: Path) -> dict:
     if not path.exists():
         raise RegistryError(f"registry not found: {path}")
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except json.JSONDecodeError as e:
         raise RegistryError(f"invalid JSON in {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise RegistryError(
+            f"invalid JSON in {path}: expected an object, got {type(data).__name__}"
+        )
+    return data
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -75,6 +80,10 @@ def _write_json(path: Path, data: dict) -> None:
 def load_voices(path: Path = DEFAULT_VOICES_PATH) -> dict[str, Voice]:
     raw = _read_json(path)
     voices_raw = raw.get("voices", {})
+    if not isinstance(voices_raw, dict):
+        raise RegistryError(
+            f"invalid voices.json at {path}: 'voices' must be an object"
+        )
     out: dict[str, Voice] = {}
     for vid, data in voices_raw.items():
         missing = [f for f in _REQUIRED_VOICE_FIELDS if f not in data]

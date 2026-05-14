@@ -55,6 +55,20 @@ def test_load_voices_malformed_json_raises(tmp_path):
         load_voices(p)
 
 
+def test_load_voices_top_level_array_raises(tmp_path):
+    p = tmp_path / "voices.json"
+    p.write_text("[]")
+    with pytest.raises(RegistryError, match="expected an object"):
+        load_voices(p)
+
+
+def test_load_voices_voices_field_not_object_raises(tmp_path):
+    p = tmp_path / "voices.json"
+    p.write_text('{"version": 1, "voices": "not a dict"}')
+    with pytest.raises(RegistryError, match="'voices' must be an object"):
+        load_voices(p)
+
+
 def test_load_voices_missing_file_raises(tmp_path):
     with pytest.raises(RegistryError, match="not found"):
         load_voices(tmp_path / "nope.json")
