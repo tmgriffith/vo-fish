@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import sys
 
@@ -115,18 +116,15 @@ def render(
     if not results:
         raise RuntimeError("Fish Speech returned no audio segments")
 
+    import mlx.core as mx
     # Concatenate any segments
     if len(results) == 1:
         audio = results[0].audio
     else:
-        import mlx.core as mx
         audio = mx.concatenate([r.audio for r in results])
 
-    try:
-        import mlx.core as mx
-        mx.eval(audio)
-    except Exception:
-        pass
+    # Materialise before numpy conversion in _write_audio.
+    mx.eval(audio)
 
     _write_audio(out_path, audio, sr)
     duration_s = float(audio.shape[0]) / sr
@@ -146,7 +144,6 @@ def render(
                                        anchors=anchors)
         quality_passed = check.passed
         words_path = out_path.with_suffix(".words.json")
-        import json
         words_path.write_text(json.dumps({
             "duration_s": duration_s,
             "max_gap": check.max_gap,
